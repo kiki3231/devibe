@@ -3,6 +3,7 @@ mod stats;
 mod app;
 mod ui;
 mod widgets;
+mod picker;
 
 use clap::Parser;
 use std::path::PathBuf;
@@ -28,9 +29,31 @@ fn main() {
 
     let paths = if let Some(repo) = cli.repo {
         vec![repo]
+    } else if let Some(scan_dir) = cli.scan {
+        scanner::discover_repos(&scan_dir)
+    } else if cli.summary {
+        // --summary without path: scan current dir
+        scanner::discover_repos(&PathBuf::from("."))
     } else {
-        let root = cli.scan.unwrap_or_else(|| PathBuf::from("."));
-        scanner::discover_repos(&root)
+        // No args at all — try current dir, fall back to picker
+        let current = PathBuf::from(".");
+        let repos = scanner::discover_repos(&current);
+        if !repos.is_empty() {
+            repos
+        } else {
+            // No repos in current dir — launch directory picker (TTY only)
+            let start = std::env::var("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("."));
+            let picked = picker::run_picker(&start);
+            match picked {
+                Some(dir) => scanner::discover_repos(&dir),
+                None => {
+                    eprintln!("devibe: no directory selected.");
+                    std::process::exit(0);
+                }
+            }
+        }
     };
 
     if paths.is_empty() {
