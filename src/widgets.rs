@@ -172,21 +172,32 @@ pub fn render_heatmap(frame: &mut Frame, area: Rect, data: &HeatmapData, focus: 
     // legend
     if inner.height >= 10 {
         let legend_y = start_y + 8;
-        let legend_x = start_x + 25;
+        let legend_x = start_x + 20;
         let steps = [0.0, 0.25, 0.5, 0.75, 1.0];
-        let labels = ["0", "1/4", "1/2", "3/4", "1"];
-        for (i, (&intensity, label)) in steps.iter().zip(labels.iter()).enumerate() {
-            let x = legend_x + i as u16 * 3;
+
+        // "Less" label
+        if let Some(r) = clip(Rect::new(legend_x - 5, legend_y, 4, 1), inner) {
+            frame.render_widget(
+                Paragraph::new(Span::styled("Less", Style::default().fg(Color::DarkGray))),
+                r,
+            );
+        }
+
+        // 5 colored blocks
+        for (i, &intensity) in steps.iter().enumerate() {
+            let x = legend_x + i as u16 * 2;
             if let Some(r) = clip(Rect::new(x, legend_y, 2, 1), inner) {
                 let cell = Block::default().style(Style::default().bg(heat_color(intensity)));
                 frame.render_widget(cell, r);
             }
-            if let Some(r) = clip(Rect::new(x, legend_y + 1, 3, 1), inner) {
-                frame.render_widget(
-                    Paragraph::new(Span::styled(*label, Style::default().fg(Color::DarkGray))),
-                    r,
-                );
-            }
+        }
+
+        // "More" label
+        if let Some(r) = clip(Rect::new(legend_x + 11, legend_y, 4, 1), inner) {
+            frame.render_widget(
+                Paragraph::new(Span::styled("More", Style::default().fg(Color::DarkGray))),
+                r,
+            );
         }
     }
 }

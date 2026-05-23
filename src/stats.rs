@@ -204,7 +204,10 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
 }
 
 fn repo_name(path: &Path) -> String {
-    path.file_name()
+    // Resolve "." and ".." to the actual directory name
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    resolved
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string()
