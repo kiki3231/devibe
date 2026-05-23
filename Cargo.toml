@@ -1,0 +1,11 @@
+[package]
+name = "devibe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+git2 = { version = "0.19", default-features = false }
+chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
