@@ -3,6 +3,11 @@
 > **Your coding life, quantified.** / **量化你的编码人生。** — 一个漂亮的终端开发者仪表盘。
 
 <p align="center">
+  <a href="#中文说明">🇨🇳 中文</a> &nbsp;·&nbsp;
+  <a href="#english">🇬🇧 English</a>
+</p>
+
+<p align="center">
   <img src="demo.gif" alt="devibe demo" width="800">
 </p>
 
@@ -78,7 +83,7 @@ sudo cp target/release/devibe /usr/local/bin/
 
 ---
 
-## English
+## <a id="english"></a>English
 
 Turn your git history into a gorgeous TUI dashboard. No cloud, no account, no bloat — just your local repos and a 2MB binary.
 
