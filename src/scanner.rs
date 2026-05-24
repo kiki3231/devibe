@@ -7,6 +7,17 @@ pub fn discover_repos(root: &Path) -> Vec<PathBuf> {
     repos
 }
 
+/// Discover repos from multiple root paths (for refresh).
+pub fn discover_all(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut all = Vec::new();
+    for root in roots {
+        all.extend(discover_repos(root));
+    }
+    all.sort();
+    all.dedup();
+    all
+}
+
 fn discover_recursive(dir: &Path, depth: u32, repos: &mut Vec<PathBuf>) {
     if depth > 3 || !dir.is_dir() {
         return;

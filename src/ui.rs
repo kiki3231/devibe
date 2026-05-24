@@ -2,9 +2,11 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use crate::app::App;
 use crate::widgets::{self, Panel};
+use crate::theme::Theme;
 
 pub fn render(frame: &mut Frame, app: &App) {
-    let bg = Block::default().style(Style::default().bg(Color::Rgb(18, 18, 18)));
+    let theme = app.theme;
+    let bg = Block::default().style(Style::default().bg(theme.bg()));
     frame.render_widget(bg, frame.area());
 
     let [summary_area, main_area, bottom_area, help_area] = Layout::vertical([
@@ -24,51 +26,81 @@ pub fn render(frame: &mut Frame, app: &App) {
         Constraint::Percentage(60),
     ]).areas(bottom_area);
 
-    render_summary(frame, summary_area, &app.data.summary);
-    widgets::render_daily_chart(frame, daily_area, &app.data.daily_commits, app.focused_panel);
-    widgets::render_heatmap(frame, heatmap_area, &app.data.heatmap, app.focused_panel);
-    widgets::render_languages(frame, lang_area, &app.data.languages, app.focused_panel);
-    widgets::render_top_repos(frame, repos_area, &app.data.top_repos, app.focused_panel);
-    render_help(frame, help_area, app.focused_panel);
+    render_summary(frame, summary_area, &app.data.summary, theme);
+    widgets::render_daily_chart(
+        frame, daily_area, &app.data.daily_commits,
+        app.focused_panel, theme, app.scroll_offset,
+    );
+    widgets::render_heatmap(
+        frame, heatmap_area, &app.data.heatmap,
+        app.focused_panel, theme,
+    );
+    widgets::render_languages(
+        frame, lang_area, &app.data.languages,
+        app.focused_panel, theme, app.scroll_offset,
+    );
+
+    // Bottom-right panel: show repos (4) or authors (5) based on focus
+    if app.focused_panel == Panel::Authors {
+        widgets::render_authors(
+            frame, repos_area, &app.data.authors,
+            app.focused_panel, theme, app.scroll_offset,
+        );
+    } else {
+        widgets::render_top_repos(
+            frame, repos_area, &app.data.top_repos,
+            app.focused_panel, theme, app.scroll_offset,
+        );
+    }
+
+    render_help(frame, help_area, app.focused_panel, theme);
 }
 
-fn render_summary(frame: &mut Frame, area: Rect, s: &crate::stats::Summary) {
+fn render_summary(frame: &mut Frame, area: Rect, s: &crate::stats::Summary, theme: Theme) {
     let text = format!(
-        " Repos: {}  |  Commits: {}  |  Lines: +{} / -{}  |  Active days: {} (over {}d)  |  devibe v0.1.0",
-        s.repo_count, s.total_commits, fmt_count(s.lines_added), fmt_count(s.lines_deleted), s.active_days, s.since_days
+        " Repos: {}  |  Commits: {}  |  Lines: +{} / -{}  |  Active days: {} ({}d)  |  Authors: {}  |  {} theme  |  devibe v0.2.0",
+        s.repo_count,
+        s.total_commits,
+        fmt_count(s.lines_added),
+        fmt_count(s.lines_deleted),
+        s.active_days,
+        s.since_days,
+        s.total_authors,
+        theme.name(),
     );
-    let span = Span::styled(
+    let p = Paragraph::new(Span::styled(
         text,
-        Style::default().fg(Color::Rgb(180, 180, 180)).bg(Color::Rgb(30, 30, 30)),
-    );
-    let p = Paragraph::new(span).style(Style::default().bg(Color::Rgb(30, 30, 30)));
+        Style::default().fg(theme.text_dim()).bg(theme.surface()),
+    ))
+    .style(Style::default().bg(theme.surface()));
     frame.render_widget(p, area);
 }
 
-fn render_help(frame: &mut Frame, area: Rect, focus: Panel) {
+fn render_help(frame: &mut Frame, area: Rect, focus: Panel, theme: Theme) {
     let items = [
-        ("1", "Daily", focus == Panel::Daily),
-        ("2", "Heatmap", focus == Panel::Heatmap),
-        ("3", "Languages", focus == Panel::Languages),
-        ("4", "Repos", focus == Panel::Repos),
+        ("1", Panel::Daily),
+        ("2", Panel::Heatmap),
+        ("3", Panel::Languages),
+        ("4", Panel::Repos),
+        ("5", Panel::Authors),
     ];
 
-    let mut spans: Vec<Span> = vec![Span::styled(" ", Style::default())];
-    for (key, label, active) in &items {
-        let style = if *active {
-            Style::default().fg(Color::Black).bg(Color::Cyan)
+    let mut spans: Vec<Span> = vec![Span::styled(" ", Style::default().bg(theme.surface()))];
+    for (key, panel) in &items {
+        let style = if focus == *panel {
+            Style::default().fg(Color::Black).bg(theme.accent())
         } else {
-            Style::default().fg(Color::Gray).bg(Color::Rgb(30, 30, 30))
+            Style::default().fg(theme.text_dim()).bg(theme.surface())
         };
-        spans.push(Span::styled(format!("{}({})", key, label), style));
-        spans.push(Span::styled("  ", Style::default().bg(Color::Rgb(30, 30, 30))));
+        spans.push(Span::styled(format!(" {}({})", key, panel.label()), style));
+        spans.push(Span::styled(" ", Style::default().bg(theme.surface())));
     }
     spans.push(Span::styled(
-        "   q:Quit",
-        Style::default().fg(Color::DarkGray).bg(Color::Rgb(30, 30, 30)),
+        "  r:Refresh  t:Theme  ↑↓/jk:Scroll  q:Quit",
+        Style::default().fg(theme.border()).bg(theme.surface()),
     ));
 
-    let p = Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Rgb(30, 30, 30)));
+    let p = Paragraph::new(Line::from(spans)).style(Style::default().bg(theme.surface()));
     frame.render_widget(p, area);
 }
 

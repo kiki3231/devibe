@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "description": "A beautiful terminal dashboard for your git activity",
+    "homepage": "https://github.com/kiki3231/devibe",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/kiki3231/devibe/releases/download/v0.2.0/devibe-windows-x86_64.zip",
+            "hash": "",
+            "bin": "devibe.exe"
+        }
+    },
+    "checkver": {
+        "github": "https://github.com/kiki3231/devibe"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/kiki3231/devibe/releases/download/v$version/devibe-windows-x86_64.zip"
+            }
+        }
+    }
+}

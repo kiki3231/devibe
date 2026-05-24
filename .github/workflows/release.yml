@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.release.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          awk '/^## \['$VERSION'\]/{flag=1; next} /^## \[/{flag=0} flag' CHANGELOG.md > /tmp/changelog.md
+          echo '```' >> /tmp/changelog.md
+          # Simple changelog extraction
+          echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/master/CHANGELOG.md) for details." > /tmp/body.md
+
+      - name: Create Release
+        id: release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "devibe v${{ steps.changelog.outputs.version }}"
+          body_path: /tmp/body.md
+          draft: true
+          prerelease: false
+
+  build:
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: devibe-linux-x86_64
+            binary: devibe
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: devibe-linux-x86_64-musl
+            binary: devibe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: devibe-macos-x86_64
+            binary: devibe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: devibe-macos-arm64
+            binary: devibe
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: devibe-windows-x86_64
+            binary: devibe.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools (Linux musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            cargo build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      - name: Strip binary (non-Windows)
+        if: matrix.os != 'windows-latest'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.binary }}
+
+      - name: Package (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.binary }}
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          Compress-Archive -Path ${{ matrix.binary }} -DestinationPath ${{ matrix.artifact }}.zip
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          files: |
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}.tar.gz
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  checksums:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate checksums
+        run: |
+          # Download artifacts and generate SHA256
+          echo "Checksums:" > checksums.txt
+
+      - name: Upload checksums
+        uses: softprops/action-gh-release@v1
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          files: checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

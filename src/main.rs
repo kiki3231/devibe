@@ -4,6 +4,8 @@ mod app;
 mod ui;
 mod widgets;
 mod picker;
+mod theme;
+mod config;
 
 use clap::Parser;
 use std::path::PathBuf;
@@ -22,26 +24,38 @@ struct Cli {
     /// Print text summary and exit (no TUI, suitable for CI)
     #[arg(long)]
     summary: bool,
+
+    /// Number of days for the daily chart (default: 14)
+    #[arg(short = 'd', long, default_value = "14")]
+    days: u32,
+
+    /// Export data as JSON and exit
+    #[arg(long, value_name = "FILE")]
+    export_json: Option<PathBuf>,
+
+    /// Export data as CSV and exit
+    #[arg(long, value_name = "FILE")]
+    export_csv: Option<PathBuf>,
 }
 
 fn main() {
     let cli = Cli::parse();
+    let cfg = config::Config::load();
+
+    let days = if cli.days != 14 { cli.days } else { cfg.days };
 
     let paths = if let Some(repo) = cli.repo {
         vec![repo]
     } else if let Some(scan_dir) = cli.scan {
         scanner::discover_repos(&scan_dir)
     } else if cli.summary {
-        // --summary without path: scan current dir
         scanner::discover_repos(&PathBuf::from("."))
     } else {
-        // No args at all — try current dir, fall back to picker
         let current = PathBuf::from(".");
         let repos = scanner::discover_repos(&current);
         if !repos.is_empty() {
             repos
         } else {
-            // No repos in current dir — launch directory picker (TTY only)
             let start = std::env::var("HOME")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("."));
@@ -62,14 +76,50 @@ fn main() {
         std::process::exit(1);
     }
 
-    let data = stats::compute(&paths);
+    let data = stats::compute(&paths, days);
+
+    if let Some(json_path) = cli.export_json {
+        match serde_json::to_string_pretty(&data) {
+            Ok(json) => {
+                std::fs::write(&json_path, json).unwrap_or_else(|e| {
+                    eprintln!("devibe: failed to write JSON: {}", e);
+                });
+                println!("JSON exported to {}", json_path.display());
+            }
+            Err(e) => eprintln!("devibe: failed to serialize JSON: {}", e),
+        }
+        return;
+    }
+
+    if let Some(csv_path) = cli.export_csv {
+        let csv = stats::export_csv(&data);
+        std::fs::write(&csv_path, csv).unwrap_or_else(|e| {
+            eprintln!("devibe: failed to write CSV: {}", e);
+        });
+        println!("CSV exported to {}", csv_path.display());
+        return;
+    }
 
     if cli.summary {
         print_summary(&data);
         return;
     }
 
-    app::run(data);
+    let theme = cfg.theme
+        .as_deref()
+        .and_then(|t| match t.to_lowercase().as_str() {
+            "dark" => Some(theme::Theme::Dark),
+            "light" => Some(theme::Theme::Light),
+            "gruvbox" => Some(theme::Theme::Gruvbox),
+            "nord" => Some(theme::Theme::Nord),
+            "catppuccin" => Some(theme::Theme::Catppuccin),
+            "monokai" => Some(theme::Theme::Monokai),
+            "onedark" => Some(theme::Theme::OneDark),
+            _ => None,
+        })
+        .unwrap_or(theme::Theme::Dark);
+
+    app::run(data, paths, days, theme);
 }
 
 fn print_summary(data: &stats::DashboardData) {

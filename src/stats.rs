@@ -1,19 +1,23 @@
 use chrono::{NaiveDate, NaiveDateTime, DateTime, Datelike, Timelike, Duration, Utc};
 use git2::Repository;
-use std::collections::HashMap;
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const MAX_COMMITS_PER_REPO: usize = 5000;
-const DAILY_WINDOW: i64 = 14;
 
+#[derive(Serialize)]
 pub struct DashboardData {
     pub summary: Summary,
     pub daily_commits: Vec<(NaiveDate, u32)>,
     pub heatmap: HeatmapData,
     pub languages: Vec<(String, u32)>,
     pub top_repos: Vec<(String, u32)>,
+    #[serde(skip)]
+    pub authors: Vec<(String, u32)>,
 }
 
+#[derive(Serialize)]
 pub struct Summary {
     pub repo_count: usize,
     pub total_commits: u32,
@@ -21,19 +25,23 @@ pub struct Summary {
     pub lines_deleted: u64,
     pub active_days: u32,
     pub since_days: i64,
+    pub total_authors: u32,
 }
 
+#[derive(Serialize)]
 pub struct HeatmapData {
     pub grid: [[u32; 24]; 7],
     pub max_count: u32,
 }
 
-pub fn compute(repos: &[PathBuf]) -> DashboardData {
+pub fn compute(repos: &[PathBuf], days: u32) -> DashboardData {
     let today = Utc::now().date_naive();
+    let daily_window = days as i64;
 
     let mut all_commits: Vec<CommitEntry> = Vec::new();
     let mut all_extensions: HashMap<String, u32> = HashMap::new();
     let mut repo_commit_counts: Vec<(String, u32)> = Vec::new();
+    let mut author_counts: HashMap<String, u32> = HashMap::new();
 
     for repo_path in repos {
         if let Some(stats) = compute_repo_stats(repo_path) {
@@ -44,6 +52,9 @@ pub fn compute(repos: &[PathBuf]) -> DashboardData {
             for (ext, count) in stats.file_extensions {
                 *all_extensions.entry(ext).or_default() += count;
             }
+            for (author, count) in stats.authors {
+                *author_counts.entry(author).or_default() += count;
+            }
             all_commits.extend(stats.commits);
         }
     }
@@ -53,7 +64,7 @@ pub fn compute(repos: &[PathBuf]) -> DashboardData {
     let lines_added: u64 = all_commits.iter().map(|c| c.insertions).sum();
     let lines_deleted: u64 = all_commits.iter().map(|c| c.deletions).sum();
 
-    let unique_days: std::collections::HashSet<NaiveDate> = all_commits
+    let unique_days: HashSet<NaiveDate> = all_commits
         .iter()
         .map(|c| c.datetime.date())
         .collect();
@@ -68,7 +79,7 @@ pub fn compute(repos: &[PathBuf]) -> DashboardData {
 
     // --- daily commits ---
     let mut daily_map: HashMap<NaiveDate, u32> = HashMap::new();
-    for i in 0..DAILY_WINDOW {
+    for i in 0..daily_window {
         daily_map.insert(today - Duration::days(i), 0);
     }
     for c in &all_commits {
@@ -106,6 +117,12 @@ pub fn compute(repos: &[PathBuf]) -> DashboardData {
     repo_commit_counts.sort_by(|a, b| b.1.cmp(&a.1));
     repo_commit_counts.truncate(10);
 
+    // --- authors ---
+    let total_authors = author_counts.len() as u32;
+    let mut authors: Vec<(String, u32)> = author_counts.into_iter().collect();
+    authors.sort_by(|a, b| b.1.cmp(&a.1));
+    authors.truncate(10);
+
     DashboardData {
         summary: Summary {
             repo_count: repos.len(),
@@ -114,11 +131,13 @@ pub fn compute(repos: &[PathBuf]) -> DashboardData {
             lines_deleted,
             active_days,
             since_days,
+            total_authors,
         },
         daily_commits,
         heatmap: HeatmapData { grid, max_count },
         languages,
         top_repos: repo_commit_counts,
+        authors,
     }
 }
 
@@ -126,6 +145,7 @@ struct RepoStats {
     commits: Vec<CommitEntry>,
     commit_count: u32,
     file_extensions: HashMap<String, u32>,
+    authors: HashMap<String, u32>,
 }
 
 struct CommitEntry {
@@ -164,6 +184,7 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
 
     let mut commits = Vec::new();
     let mut commit_count = 0u32;
+    let mut authors: HashMap<String, u32> = HashMap::new();
 
     for oid in revwalk {
         if commits.len() >= MAX_COMMITS_PER_REPO {
@@ -179,6 +200,13 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
         };
         let time = commit.time();
         let dt = DateTime::from_timestamp(time.seconds(), 0)?.naive_utc();
+
+        let author = commit.author();
+        let author_name = author
+            .name()
+            .unwrap_or("unknown")
+            .to_string();
+        *authors.entry(author_name).or_default() += 1;
 
         let tree = commit.tree().ok()?;
         let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
@@ -200,17 +228,44 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
         commits,
         commit_count,
         file_extensions,
+        authors,
     })
 }
 
-fn repo_name(path: &Path) -> String {
-    // Resolve "." and ".." to the actual directory name
+pub fn repo_name(path: &Path) -> String {
     let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     resolved
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string()
+}
+
+pub fn export_csv(data: &DashboardData) -> String {
+    let mut out = String::from("type,label,value\n");
+
+    for (date, count) in &data.daily_commits {
+        out.push_str(&format!("daily,{},{}\n", date.format("%Y-%m-%d"), count));
+    }
+
+    for day in 0..7 {
+        for hour in 0..24 {
+            out.push_str(&format!(
+                "heatmap,day{}_hour{:02},{}\n",
+                day, hour, data.heatmap.grid[day][hour]
+            ));
+        }
+    }
+
+    for (lang, count) in &data.languages {
+        out.push_str(&format!("language,{},{}\n", lang, count));
+    }
+
+    for (repo, count) in &data.top_repos {
+        out.push_str(&format!("repo,{},{}\n", repo, count));
+    }
+
+    out
 }
 
 fn extension_to_language(ext: &str) -> &str {
@@ -265,6 +320,11 @@ fn extension_to_language(ext: &str) -> &str {
         "cfg" | "conf" | "config" | "ini" => "Config",
         "svg" => "SVG",
         "png" | "jpg" | "jpeg" | "gif" | "ico" | "webp" => "Image",
+        "vue" => "Vue",
+        "svelte" => "Svelte",
+        "astro" => "Astro",
+        "ql" => "GraphQL",
+        "prisma" => "Prisma",
         _ => "Other",
     }
 }

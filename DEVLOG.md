@@ -1,87 +1,87 @@
-# devibe 开发日志 — Day 1
+# devibe 开发日志 — Day 2
 
 **日期**: 2026-05-24  
 **仓库**: https://github.com/kiki3231/devibe  
-**版本**: v0.1.0
+**版本**: v0.2.0
 
 ---
 
-## 项目定位
-
-devibe = **dev** + **vibe** — 终端开发者仪表盘。读取本地 git 仓库，生成 TUI 数据面板。完全离线，2MB 二进制，零运行时依赖。
-
 ## 今日完成
 
-### 架构
+### 新增功能
 
+#### 7 套配色主题
+- Dark（默认）、Light、Gruvbox、Nord、Catppuccin、Monokai、OneDark
+- `t` 键循环切换，`T` 回退
+- 全局配置 `~/.config/devibe/config.toml` 中 `theme = "nord"`
+- 所有 widget 完整适配（柱状图、热力图、进度条、边框、文本）
+
+#### 配置文件支持
+```toml
+theme = "gruvbox"
+days = 30
+exclude = ["node_modules"]
 ```
-devibe/
-├── Cargo.toml            # Rust 项目配置
-├── README.md             # 中英双语 README（带语言切换器）
-└── src/
-    ├── main.rs           # CLI 入口（--repo / --scan / --summary）
-    ├── scanner.rs        # git 仓库发现器（递归扫描，深度 3）
-    ├── stats.rs          # 数据统计引擎
-    ├── picker.rs         # TUI 目录选择器
-    ├── app.rs            # TUI 事件循环 + 状态管理
-    ├── ui.rs             # 主布局 + 帮助栏
-    └── widgets.rs        # 4 个终端图表 widget
-```
+- 项目级：当前目录 `.devibe.toml`
+- 全局级：`~/.config/devibe/config.toml`
 
-**826 行 Rust，零编译警告。**
+#### 数据导出
+- `--export-json stats.json` — 结构化 JSON 导出
+- `--export-csv stats.csv` — CSV 表格导出（type, label, value）
 
-### 功能面板
+#### 面板 5：贡献者排行
+- 按 commit 数的作者排名
+- 多人项目的协作热力图
 
-| 面板 | 内容 | 快捷键 |
-|------|------|--------|
-| 每日提交 | 近 14 天 commit 柱状图 | `1` |
-| 活跃热力图 | 24h × 7d 提交时段分布 | `2` |
-| 语言占比 | 按文件数统计语言条形图 | `3` |
-| 仓库排行 | 按 commit 数排序 | `4` |
+#### 实时刷新
+- `r` 键重新扫描仓库，更新所有面板数据
 
-### 三种模式
+#### 滚动支持
+- `j`/`k` / `↑`/`↓` 逐行滚动
+- `PgUp`/`PgDn` 翻页滚动
+- `Home`/`End` 跳到开头/结尾
+- 语言和仓库面板显示 `▲▼` 溢出指示器
 
-| 命令 | 行为 |
-|------|------|
-| `devibe` | 无参数：当前目录有 git 仓库 → 直接仪表盘；没有 → 弹出目录选择器 |
-| `devibe --repo <path>` | 分析单个仓库，跳过选择器 |
-| `devibe --scan <dir>` | 递归扫描目录下所有仓库 |
-| `devibe --summary` | 纯文本输出，适合 CI/CD |
+#### `--days N` 标志
+- 自定义每日图表的回溯天数（默认 14）
 
-### 目录选择器
+### 工程化
 
-- `j/k/↑/↓` 导航
-- `Enter` 进入目录 / 选中 git 仓库
-- `Backspace` 返回上级
-- `Home` 跳到 `~`
-- git 仓库标 `[git]` 并排最前
-- 非 TTY 环境自动降级为文字提示
+#### CI/CD（GitHub Actions）
+- **CI**：`cargo fmt --check` + `cargo clippy` + `cargo build --release` + `cargo test`
+- **Release**：git tag 触发 → 多平台交叉编译 → 打包 → GitHub Release
+- 6 个目标平台：Linux x86_64 (gnu/musl)、macOS x86_64/ARM64、Windows x86_64
 
-### 技术栈
+#### Windows 分发
+- 提供 `.zip` 包避免 SmartScreen 直接拦截
+- Scoop bucket manifest
+- 一键安装脚本 `install.ps1`
+- 4种 SmartScreen 解决方案文档化
 
-| 层 | 选型 |
-|----|------|
-| 语言 | Rust |
-| TUI | ratatui + crossterm |
-| Git 数据 | git2 (libgit2) |
-| 日期 | chrono |
-| CLI | clap derive |
-| 二进制 | 2.1MB (strip 后) |
+#### 仓库完善
+- `LICENSE`（MIT）
+- `CONTRIBUTING.md`（中文）
+- `CHANGELOG.md`
+- Issue 模板（Bug / 功能请求 / 其他，全中文）
+- PR 模板
+- Dependabot 自动依赖更新
 
-### 已修 Bug
+### 项目统计
 
-1. ratatui 0.29 越界渲染 panic → 添加 `clip()` 函数裁剪所有 widget
-2. `--repo .` 显示 "unknown" → `repo_name()` 增加路径 canonicalize
-3. 热力图 legend 分数标签错位 → 改为 "Less ← ■ → More"
-4. 非 TTY 环境 picker 崩溃 → `IsTerminal` 检测 + 友好提示
+| 指标 | v0.1.0 | v0.2.0 |
+|------|--------|--------|
+| Rust 文件数 | 7 | 9 |
+| 代码行数 | 826 | ~1600 |
+| 依赖数 | 5 | 9 |
+| 平台目标 | 1 | 6 |
+| 主题 | 1（硬编码） | 7（可配置） |
+| TUI 面板 | 4 | 5 |
 
-## 待改进（明天）
+## 待改进
 
-- [ ] 录制 demo GIF 放 README（涨 star 关键）
-- [ ] `--days N` 自定义时间窗口
-- [ ] 作者维度统计
-- [ ] 导出 JSON
-- [ ] 刷新功能（`r` 键）
-- [ ] 静态链接 musl 编译（跨 Linux 发行版）
-- [ ] macOS / Windows 构建
-- [ ] TUI 颜色/主题配置
+- [ ] 录制 demo GIF（终端录制工具 vhs 或 terminalizer）
+- [ ] `--since` / `--until` 时间范围过滤
+- [ ] Shell 自动补全脚本
+- [ ] 仓库内打开编辑器（`e` 键）
+- [ ] Gitmoji / Conventional Commit 分析面板
+- [ ] 在 README 中嵌入动态统计徽章
