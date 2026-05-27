@@ -32,7 +32,6 @@ fn border_style(theme: Theme, focus: Panel, me: Panel) -> Style {
     }
 }
 
-/// Clip a rect to stay within boundary, returning None if it has zero area.
 fn clip(rect: Rect, bounds: Rect) -> Option<Rect> {
     let x = rect.x.max(bounds.x);
     let y = rect.y.max(bounds.y);
@@ -42,6 +41,52 @@ fn clip(rect: Rect, bounds: Rect) -> Option<Rect> {
         return None;
     }
     Some(Rect::new(x, y, right - x, bottom - y))
+}
+
+// --- Scroll helper ---
+
+struct ScrollState {
+    offset: usize,
+    max_scroll: usize,
+    total: usize,
+    visible: usize,
+}
+
+impl ScrollState {
+    fn new(total: usize, visible_rows: usize, requested_offset: usize) -> Self {
+        let max_scroll = total.saturating_sub(visible_rows);
+        let offset = requested_offset.min(max_scroll);
+        Self { offset, max_scroll, total, visible: visible_rows }
+    }
+
+    /// Returns Some(display_row) if item at index should be rendered.
+    fn visible_row(&self, index: usize) -> Option<usize> {
+        if index < self.offset {
+            return None;
+        }
+        let display_row = index - self.offset;
+        if display_row >= self.visible {
+            return None;
+        }
+        Some(display_row)
+    }
+}
+
+fn render_scroll_indicators(frame: &mut Frame, inner: Rect, scroll: &ScrollState, theme: Theme) {
+    if scroll.total <= scroll.visible {
+        return;
+    }
+    let dim = Style::default().fg(theme.text_dim());
+    if scroll.offset > 0 {
+        if let Some(r) = clip(Rect::new(inner.x, inner.y, inner.width, 1), inner) {
+            frame.render_widget(Paragraph::new(Span::styled(" ▲ more", dim)), r);
+        }
+    }
+    if scroll.offset < scroll.max_scroll {
+        if let Some(r) = clip(Rect::new(inner.x, inner.bottom() - 1, inner.width, 1), inner) {
+            frame.render_widget(Paragraph::new(Span::styled(" ▼ more", dim)), r);
+        }
+    }
 }
 
 // --- Daily commit bar chart ---
@@ -182,11 +227,11 @@ pub fn render_heatmap(
         }
     }
 
-    for day in 0..7 {
+    for (day, day_name) in day_names.iter().enumerate() {
         let y = start_y + day as u16;
         if let Some(r) = clip(Rect::new(inner.x, y, 3, 1), inner) {
             frame.render_widget(
-                Paragraph::new(Span::styled(day_names[day], Style::default().fg(theme.text()))),
+                Paragraph::new(Span::styled(*day_name, Style::default().fg(theme.text()))),
                 r,
             );
         }
@@ -280,31 +325,18 @@ pub fn render_languages(
 
     let total = languages.iter().map(|(_, c)| *c).sum::<u32>() as f64;
     let bar_zone = inner.width.saturating_sub(19);
+    let scroll = ScrollState::new(languages.len(), inner.height as usize, scroll);
 
-    let visible_rows = inner.height as usize;
-    let max_scroll = languages.len().saturating_sub(visible_rows);
-    let scroll = scroll.min(max_scroll);
-
-    for i in 0..languages.len() {
-        if i < scroll {
-            continue;
-        }
-        let display_row = i - scroll;
+    for (i, (name, count)) in languages.iter().enumerate() {
+        let Some(display_row) = scroll.visible_row(i) else { continue };
         let y = inner.y + display_row as u16;
-        if y >= inner.bottom() {
-            break;
-        }
 
-        let (name, count) = &languages[i];
         let pct = if total > 0.0 { *count as f64 / total } else { 0.0 };
         let bar_w = (bar_zone as f64 * pct) as u16;
 
         if let Some(r) = clip(Rect::new(inner.x, y, 12, 1), inner) {
             frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!("{:>12}", name),
-                    Style::default().fg(theme.text()),
-                )),
+                Paragraph::new(Span::styled(format!("{:>12}", name), Style::default().fg(theme.text()))),
                 r,
             );
         }
@@ -321,8 +353,7 @@ pub fn render_languages(
 
         let pct_label = format!(" {:.0}%", pct * 100.0);
         let pct_w = pct_label.len() as u16;
-        let pct_x = inner.x + 13 + bar_w;
-        if let Some(r) = clip(Rect::new(pct_x, y, pct_w, 1), inner) {
+        if let Some(r) = clip(Rect::new(inner.x + 13 + bar_w, y, pct_w, 1), inner) {
             frame.render_widget(
                 Paragraph::new(Span::styled(pct_label, Style::default().fg(theme.text_dim()))),
                 r,
@@ -330,25 +361,7 @@ pub fn render_languages(
         }
     }
 
-    if languages.len() > visible_rows {
-        let scrolled = scroll.min(max_scroll);
-        if scrolled > 0 {
-            if let Some(r) = clip(Rect::new(inner.x, inner.y, inner.width, 1), inner) {
-                frame.render_widget(
-                    Paragraph::new(Span::styled(" ▲ more", Style::default().fg(theme.text_dim()))),
-                    r,
-                );
-            }
-        }
-        if scrolled < max_scroll {
-            if let Some(r) = clip(Rect::new(inner.x, inner.bottom() - 1, inner.width, 1), inner) {
-                frame.render_widget(
-                    Paragraph::new(Span::styled(" ▼ more", Style::default().fg(theme.text_dim()))),
-                    r,
-                );
-            }
-        }
-    }
+    render_scroll_indicators(frame, inner, &scroll, theme);
 }
 
 fn lang_color(name: &str) -> Color {
@@ -400,30 +413,15 @@ pub fn render_top_repos(
 
     let max_count = repos.first().map(|(_, c)| *c).unwrap_or(1).max(1);
     let bar_zone = inner.width.saturating_sub(29);
-    let bars = theme.bar_colors();
+    let scroll = ScrollState::new(repos.len(), inner.height as usize, scroll);
 
-    let visible_rows = inner.height as usize;
-    let max_scroll = repos.len().saturating_sub(visible_rows);
-    let scroll = scroll.min(max_scroll);
-
-    for i in 0..repos.len() {
-        if i < scroll {
-            continue;
-        }
-        let display_row = i - scroll;
+    for (i, (name, count)) in repos.iter().enumerate() {
+        let Some(display_row) = scroll.visible_row(i) else { continue };
         let y = inner.y + display_row as u16;
-        if y >= inner.bottom() {
-            break;
-        }
-
-        let (name, count) = &repos[i];
 
         if let Some(r) = clip(Rect::new(inner.x, y, 4, 1), inner) {
             frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!(" {:>2}.", i + 1),
-                    Style::default().fg(theme.text_dim()),
-                )),
+                Paragraph::new(Span::styled(format!(" {:>2}.", i + 1), Style::default().fg(theme.text_dim()))),
                 r,
             );
         }
@@ -431,10 +429,7 @@ pub fn render_top_repos(
         let display_name = if name.len() > 16 { &name[..15] } else { name };
         if let Some(r) = clip(Rect::new(inner.x + 4, y, 16, 1), inner) {
             frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!("{:<16}", display_name),
-                    Style::default().fg(theme.text()),
-                )),
+                Paragraph::new(Span::styled(format!("{:<16}", display_name), Style::default().fg(theme.text()))),
                 r,
             );
         }
@@ -443,26 +438,18 @@ pub fn render_top_repos(
         if bar_w > 0 {
             if let Some(r) = clip(Rect::new(inner.x + 21, y, bar_w, 1), inner) {
                 let intensity = *count as f64 / max_count as f64;
-                let color = if intensity >= 0.8 {
-                    bars[3]
-                } else if intensity >= 0.5 {
-                    bars[2]
-                } else if intensity >= 0.2 {
-                    bars[1]
-                } else {
-                    bars[0]
-                };
+                let bars = theme.bar_colors();
+                let color = if intensity >= 0.8 { bars[3] }
+                    else if intensity >= 0.5 { bars[2] }
+                    else if intensity >= 0.2 { bars[1] }
+                    else { bars[0] };
                 let bar = "█".repeat(r.width as usize);
-                frame.render_widget(
-                    Paragraph::new(Span::styled(bar, Style::default().fg(color))),
-                    r,
-                );
+                frame.render_widget(Paragraph::new(Span::styled(bar, Style::default().fg(color))), r);
             }
         }
 
         let count_label = format!(" {}", count);
-        let cw = count_label.len() as u16;
-        if let Some(r) = clip(Rect::new(inner.x + 22 + bar_w, y, cw, 1), inner) {
+        if let Some(r) = clip(Rect::new(inner.x + 22 + bar_w, y, count_label.len() as u16, 1), inner) {
             frame.render_widget(
                 Paragraph::new(Span::styled(count_label, Style::default().fg(theme.text_dim()))),
                 r,
@@ -470,24 +457,7 @@ pub fn render_top_repos(
         }
     }
 
-    if repos.len() > visible_rows {
-        if scroll > 0 {
-            if let Some(r) = clip(Rect::new(inner.x, inner.y, inner.width, 1), inner) {
-                frame.render_widget(
-                    Paragraph::new(Span::styled(" ▲ more", Style::default().fg(theme.text_dim()))),
-                    r,
-                );
-            }
-        }
-        if scroll < max_scroll {
-            if let Some(r) = clip(Rect::new(inner.x, inner.bottom() - 1, inner.width, 1), inner) {
-                frame.render_widget(
-                    Paragraph::new(Span::styled(" ▼ more", Style::default().fg(theme.text_dim()))),
-                    r,
-                );
-            }
-        }
-    }
+    render_scroll_indicators(frame, inner, &scroll, theme);
 }
 
 // --- Authors ---
@@ -519,30 +489,15 @@ pub fn render_authors(
 
     let max_count = authors.first().map(|(_, c)| *c).unwrap_or(1).max(1);
     let bar_zone = inner.width.saturating_sub(29);
-    let bars = theme.bar_colors();
+    let scroll = ScrollState::new(authors.len(), inner.height as usize, scroll);
 
-    let visible_rows = inner.height as usize;
-    let max_scroll = authors.len().saturating_sub(visible_rows);
-    let scroll = scroll.min(max_scroll);
-
-    for i in 0..authors.len() {
-        if i < scroll {
-            continue;
-        }
-        let display_row = i - scroll;
+    for (i, (name, count)) in authors.iter().enumerate() {
+        let Some(display_row) = scroll.visible_row(i) else { continue };
         let y = inner.y + display_row as u16;
-        if y >= inner.bottom() {
-            break;
-        }
-
-        let (name, count) = &authors[i];
 
         if let Some(r) = clip(Rect::new(inner.x, y, 4, 1), inner) {
             frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!(" {:>2}.", i + 1),
-                    Style::default().fg(theme.text_dim()),
-                )),
+                Paragraph::new(Span::styled(format!(" {:>2}.", i + 1), Style::default().fg(theme.text_dim()))),
                 r,
             );
         }
@@ -550,10 +505,7 @@ pub fn render_authors(
         let display_name = if name.len() > 20 { &name[..19] } else { name };
         if let Some(r) = clip(Rect::new(inner.x + 4, y, 20, 1), inner) {
             frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!("{:<20}", display_name),
-                    Style::default().fg(theme.text()),
-                )),
+                Paragraph::new(Span::styled(format!("{:<20}", display_name), Style::default().fg(theme.text()))),
                 r,
             );
         }
@@ -562,26 +514,18 @@ pub fn render_authors(
         if bar_w > 0 {
             if let Some(r) = clip(Rect::new(inner.x + 25, y, bar_w, 1), inner) {
                 let intensity = *count as f64 / max_count as f64;
-                let color = if intensity >= 0.8 {
-                    bars[3]
-                } else if intensity >= 0.5 {
-                    bars[2]
-                } else if intensity >= 0.2 {
-                    bars[1]
-                } else {
-                    bars[0]
-                };
+                let bars = theme.bar_colors();
+                let color = if intensity >= 0.8 { bars[3] }
+                    else if intensity >= 0.5 { bars[2] }
+                    else if intensity >= 0.2 { bars[1] }
+                    else { bars[0] };
                 let bar = "█".repeat(r.width as usize);
-                frame.render_widget(
-                    Paragraph::new(Span::styled(bar, Style::default().fg(color))),
-                    r,
-                );
+                frame.render_widget(Paragraph::new(Span::styled(bar, Style::default().fg(color))), r);
             }
         }
 
         let count_label = format!(" {}", count);
-        let cw = count_label.len() as u16;
-        if let Some(r) = clip(Rect::new(inner.x + 26 + bar_w, y, cw, 1), inner) {
+        if let Some(r) = clip(Rect::new(inner.x + 26 + bar_w, y, count_label.len() as u16, 1), inner) {
             frame.render_widget(
                 Paragraph::new(Span::styled(count_label, Style::default().fg(theme.text_dim()))),
                 r,
@@ -589,22 +533,5 @@ pub fn render_authors(
         }
     }
 
-    if authors.len() > visible_rows {
-        if scroll > 0 {
-            if let Some(r) = clip(Rect::new(inner.x, inner.y, inner.width, 1), inner) {
-                frame.render_widget(
-                    Paragraph::new(Span::styled(" ▲ more", Style::default().fg(theme.text_dim()))),
-                    r,
-                );
-            }
-        }
-        if scroll < max_scroll {
-            if let Some(r) = clip(Rect::new(inner.x, inner.bottom() - 1, inner.width, 1), inner) {
-                frame.render_widget(
-                    Paragraph::new(Span::styled(" ▼ more", Style::default().fg(theme.text_dim()))),
-                    r,
-                );
-            }
-        }
-    }
+    render_scroll_indicators(frame, inner, &scroll, theme);
 }

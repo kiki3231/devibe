@@ -57,8 +57,8 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_summary(frame: &mut Frame, area: Rect, s: &crate::stats::Summary, theme: Theme) {
-    let text = format!(
-        " Repos: {}  |  Commits: {}  |  Lines: +{} / -{}  |  Active days: {} ({}d)  |  Authors: {}  |  {} theme  |  devibe v0.2.0",
+    let mut text = format!(
+        " Repos: {}  |  Commits: {}  |  Lines: +{} / -{}  |  Active days: {} ({}d)  |  Authors: {}  |  {} theme  |  v0.2.0",
         s.repo_count,
         s.total_commits,
         fmt_count(s.lines_added),
@@ -68,6 +68,9 @@ fn render_summary(frame: &mut Frame, area: Rect, s: &crate::stats::Summary, them
         s.total_authors,
         theme.name(),
     );
+    if s.warning_count > 0 {
+        text.push_str(&format!("  |  ⚠ {} warning(s)", s.warning_count));
+    }
     let p = Paragraph::new(Span::styled(
         text,
         Style::default().fg(theme.text_dim()).bg(theme.surface()),

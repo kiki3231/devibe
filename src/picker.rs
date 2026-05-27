@@ -59,15 +59,13 @@ fn picker_loop(terminal: &mut ratatui::DefaultTerminal, start_dir: &Path) -> Opt
                     }
                     state.select(Some(new_idx));
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if !entries.is_empty() {
-                        let idx = state.selected().unwrap_or(0);
-                        let new_idx = (idx + 1).min(entries.len() - 1);
-                        if new_idx >= scroll_offset + 15 {
-                            scroll_offset = new_idx - 14;
-                        }
-                        state.select(Some(new_idx));
+                KeyCode::Down | KeyCode::Char('j') if !entries.is_empty() => {
+                    let idx = state.selected().unwrap_or(0);
+                    let new_idx = (idx + 1).min(entries.len() - 1);
+                    if new_idx >= scroll_offset + 15 {
+                        scroll_offset = new_idx - 14;
                     }
+                    state.select(Some(new_idx));
                 }
                 KeyCode::Enter => {
                     let Some(idx) = state.selected() else { continue };
@@ -107,13 +105,11 @@ fn picker_loop(terminal: &mut ratatui::DefaultTerminal, start_dir: &Path) -> Opt
                         scroll_offset = 0;
                     }
                 }
-                KeyCode::PageDown => {
-                    if !entries.is_empty() {
-                        let idx = state.selected().unwrap_or(0);
-                        let new_idx = (idx + 15).min(entries.len() - 1);
-                        scroll_offset = (scroll_offset + 15).min(entries.len().saturating_sub(1));
-                        state.select(Some(new_idx));
-                    }
+                KeyCode::PageDown if !entries.is_empty() => {
+                    let idx = state.selected().unwrap_or(0);
+                    let new_idx = (idx + 15).min(entries.len() - 1);
+                    scroll_offset = (scroll_offset + 15).min(entries.len().saturating_sub(1));
+                    state.select(Some(new_idx));
                 }
                 KeyCode::PageUp => {
                     let idx = state.selected().unwrap_or(0);

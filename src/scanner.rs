@@ -41,3 +41,52 @@ fn skip_dir(path: &Path) -> bool {
         .map(|n| n.starts_with('.') || n == "node_modules" || n == "target" || n == "vendor")
         .unwrap_or(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_skip_hidden_dirs() {
+        assert!(skip_dir(Path::new("/tmp/.git")));
+        assert!(skip_dir(Path::new("/tmp/.config")));
+    }
+
+    #[test]
+    fn test_skip_known_dirs() {
+        assert!(skip_dir(Path::new("/tmp/node_modules")));
+        assert!(skip_dir(Path::new("/tmp/target")));
+        assert!(skip_dir(Path::new("/tmp/vendor")));
+    }
+
+    #[test]
+    fn test_skip_invalid_path() {
+        assert!(skip_dir(Path::new("")));
+    }
+
+    #[test]
+    fn test_not_skip_normal_dirs() {
+        assert!(!skip_dir(Path::new("/tmp/myproject")));
+        assert!(!skip_dir(Path::new("/tmp/src")));
+    }
+
+    #[test]
+    fn test_discover_repos_empty_dir() {
+        let tmp = std::env::temp_dir().join("devibe_test_empty");
+        let _ = std::fs::create_dir_all(&tmp);
+        let repos = discover_repos(&tmp);
+        assert!(repos.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_discover_repos_finds_git() {
+        let tmp = std::env::temp_dir().join("devibe_test_repo");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join(".git")).unwrap();
+        let repos = discover_repos(&tmp);
+        assert_eq!(repos.len(), 1);
+        assert!(repos[0].ends_with("devibe_test_repo"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}

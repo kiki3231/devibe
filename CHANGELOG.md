@@ -2,6 +2,26 @@
 
 All notable changes to devibe will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Parallel repo scanning with `rayon` for faster multi-repo analysis
+- Scan progress feedback to stderr (`[1/5] repo-name`)
+- Warning collection: errors during scanning are reported in the summary bar
+- 13 unit tests covering stats, scanner, and config modules
+
+### Changed
+- Extracted `ScrollState` helper in widgets to eliminate ~100 lines of duplicated scroll logic
+- `extension_to_language` is now public for testability
+- `compute_repo_stats` now collects warnings instead of silently skipping errors
+- Summary mode (`--summary`) displays warnings when present
+
+### Fixed
+- All clippy warnings resolved (unnecessary_sort_by, needless_range_loop, collapsible_match)
+
+### Removed
+- Release workflow (`.github/workflows/release.yml`) — no more binary publishing
+
 ## [0.2.0] - 2026-05-24
 
 ### Added

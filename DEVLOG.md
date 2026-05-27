@@ -1,12 +1,40 @@
-# devibe 开发日志 — Day 2
+# devibe 开发日志 — Day 3
 
-**日期**: 2026-05-24  
-**仓库**: https://github.com/kiki3231/devibe  
-**版本**: v0.2.0
+**日期**: 2026-05-27
+**仓库**: https://github.com/kiki3231/devibe
+**版本**: v0.2.0 (优化迭代)
 
 ---
 
 ## 今日完成
+
+### 性能优化
+- **rayon 并行扫描** — 多仓库使用 `par_iter()` 并行处理，显著缩短大目录扫描时间
+- 启动时输出进度信息到 stderr（`[1/5] repo-name`）
+
+### 代码质量
+- **消除 widgets.rs 重复代码** — 提取 `ScrollState` 辅助结构体和 `render_scroll_indicators()` 函数，减少 ~100 行重复的滚动逻辑
+- **消除 clippy 警告** — 修复 6 个 lint 警告（unnecessary_sort_by / needless_range_loop / collapsible_match），cli披py 零警告
+
+### 错误处理
+- **扫描错误收集** — `compute_repo_stats` 不再静默吞错，将警告信息收集并在 Summary 栏展示 `⚠ N warning(s)`
+- `--summary` 模式也展示 warning 详情
+
+### 测试
+- 新增 13 个单元测试覆盖 `stats`、`scanner`、`config` 模块
+- 测试 `extension_to_language` 映射、dir 过滤、CSV 导出、TOML 解析
+
+### 工程化
+- 删除 release.yml（不再做二进制发布）
+- 更新 CHANGELOG.md
+
+## 待改进
+
+- [ ] `--since` / `--until` 时间范围过滤
+- [ ] Shell 自动补全脚本
+- [ ] 仓库内打开编辑器（`e` 键）
+- [ ] Gitmoji / Conventional Commit 分析面板
+- [ ] 集成测试（使用临时 git 仓库）
 
 ### 新增功能
 

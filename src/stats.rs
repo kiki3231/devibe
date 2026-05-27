@@ -1,5 +1,6 @@
 use chrono::{NaiveDate, NaiveDateTime, DateTime, Datelike, Timelike, Duration, Utc};
 use git2::Repository;
+use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -15,6 +16,8 @@ pub struct DashboardData {
     pub top_repos: Vec<(String, u32)>,
     #[serde(skip)]
     pub authors: Vec<(String, u32)>,
+    #[serde(skip)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -26,6 +29,7 @@ pub struct Summary {
     pub active_days: u32,
     pub since_days: i64,
     pub total_authors: u32,
+    pub warning_count: u32,
 }
 
 #[derive(Serialize)]
@@ -34,29 +38,59 @@ pub struct HeatmapData {
     pub max_count: u32,
 }
 
+struct RepoResult {
+    repo_name: String,
+    commit_count: u32,
+    file_extensions: HashMap<String, u32>,
+    authors: HashMap<String, u32>,
+    commits: Vec<CommitEntry>,
+    warnings: Vec<String>,
+}
+
+struct CommitEntry {
+    datetime: NaiveDateTime,
+    insertions: u64,
+    deletions: u64,
+}
+
 pub fn compute(repos: &[PathBuf], days: u32) -> DashboardData {
     let today = Utc::now().date_naive();
     let daily_window = days as i64;
+    let total_repos = repos.len();
 
+    eprintln!("Scanning {} {}...", total_repos, if total_repos == 1 { "repository" } else { "repositories" });
+
+    let results: Vec<RepoResult> = repos
+        .par_iter()
+        .enumerate()
+        .filter_map(|(i, repo_path)| {
+            let name = repo_name(repo_path);
+            eprintln!("  [{}/{}] {}", i + 1, total_repos, name);
+            compute_repo_stats(repo_path)
+        })
+        .collect();
+
+    let scanned = results.len();
+    if scanned < total_repos {
+        eprintln!("Note: {}/{} repos scanned successfully ({} had errors).", scanned, total_repos, total_repos - scanned);
+    }
+
+    let mut all_warnings: Vec<String> = Vec::new();
     let mut all_commits: Vec<CommitEntry> = Vec::new();
     let mut all_extensions: HashMap<String, u32> = HashMap::new();
     let mut repo_commit_counts: Vec<(String, u32)> = Vec::new();
     let mut author_counts: HashMap<String, u32> = HashMap::new();
 
-    for repo_path in repos {
-        if let Some(stats) = compute_repo_stats(repo_path) {
-            repo_commit_counts.push((
-                repo_name(repo_path),
-                stats.commit_count,
-            ));
-            for (ext, count) in stats.file_extensions {
-                *all_extensions.entry(ext).or_default() += count;
-            }
-            for (author, count) in stats.authors {
-                *author_counts.entry(author).or_default() += count;
-            }
-            all_commits.extend(stats.commits);
+    for r in results {
+        repo_commit_counts.push((r.repo_name, r.commit_count));
+        for (ext, count) in r.file_extensions {
+            *all_extensions.entry(ext).or_default() += count;
         }
+        for (author, count) in r.authors {
+            *author_counts.entry(author).or_default() += count;
+        }
+        all_commits.extend(r.commits);
+        all_warnings.extend(r.warnings);
     }
 
     // --- summary ---
@@ -110,18 +144,20 @@ pub fn compute(repos: &[PathBuf], days: u32) -> DashboardData {
         })
         .into_iter()
         .collect();
-    languages.sort_by(|a, b| b.1.cmp(&a.1));
+    languages.sort_by_key(|b| std::cmp::Reverse(b.1));
     languages.truncate(8);
 
     // --- top repos ---
-    repo_commit_counts.sort_by(|a, b| b.1.cmp(&a.1));
+    repo_commit_counts.sort_by_key(|b| std::cmp::Reverse(b.1));
     repo_commit_counts.truncate(10);
 
     // --- authors ---
     let total_authors = author_counts.len() as u32;
     let mut authors: Vec<(String, u32)> = author_counts.into_iter().collect();
-    authors.sort_by(|a, b| b.1.cmp(&a.1));
+    authors.sort_by_key(|b| std::cmp::Reverse(b.1));
     authors.truncate(10);
+
+    let warning_count = all_warnings.len() as u32;
 
     DashboardData {
         summary: Summary {
@@ -132,32 +168,29 @@ pub fn compute(repos: &[PathBuf], days: u32) -> DashboardData {
             active_days,
             since_days,
             total_authors,
+            warning_count,
         },
         daily_commits,
         heatmap: HeatmapData { grid, max_count },
         languages,
         top_repos: repo_commit_counts,
         authors,
+        warnings: all_warnings,
     }
 }
 
-struct RepoStats {
-    commits: Vec<CommitEntry>,
-    commit_count: u32,
-    file_extensions: HashMap<String, u32>,
-    authors: HashMap<String, u32>,
-}
+fn compute_repo_stats(path: &Path) -> Option<RepoResult> {
+    let repo = Repository::open(path)
+        .inspect_err(|e| eprintln!("  Warning: failed to open {}: {}", path.display(), e))
+        .ok()?;
+    let head = repo.head()
+        .inspect_err(|e| eprintln!("  Warning: no HEAD in {}: {}", path.display(), e))
+        .ok()?;
+    let head_commit = head.peel_to_commit()
+        .inspect_err(|e| eprintln!("  Warning: failed to resolve HEAD in {}: {}", path.display(), e))
+        .ok()?;
 
-struct CommitEntry {
-    datetime: NaiveDateTime,
-    insertions: u64,
-    deletions: u64,
-}
-
-fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
-    let repo = Repository::open(path).ok()?;
-    let head = repo.head().ok()?;
-    let head_commit = head.peel_to_commit().ok()?;
+    let mut warnings: Vec<String> = Vec::new();
 
     // --- collect file extensions from HEAD tree ---
     let mut file_extensions: HashMap<String, u32> = HashMap::new();
@@ -178,7 +211,20 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
     }
 
     // --- revwalk ---
-    let mut revwalk = repo.revwalk().ok()?;
+    let mut revwalk = match repo.revwalk() {
+        Ok(r) => r,
+        Err(e) => {
+            warnings.push(format!("{}: revwalk failed: {}", repo_name(path), e));
+            return Some(RepoResult {
+                repo_name: repo_name(path),
+                commit_count: 0,
+                file_extensions,
+                authors: HashMap::new(),
+                commits: Vec::new(),
+                warnings,
+            });
+        }
+    };
     revwalk.push(head_commit.id()).ok()?;
     revwalk.set_sorting(git2::Sort::TIME).ok()?;
 
@@ -199,7 +245,10 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
             Err(_) => continue,
         };
         let time = commit.time();
-        let dt = DateTime::from_timestamp(time.seconds(), 0)?.naive_utc();
+        let dt = match DateTime::from_timestamp(time.seconds(), 0) {
+            Some(d) => d.naive_utc(),
+            None => continue,
+        };
 
         let author = commit.author();
         let author_name = author
@@ -208,13 +257,20 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
             .to_string();
         *authors.entry(author_name).or_default() += 1;
 
-        let tree = commit.tree().ok()?;
+        let tree = match commit.tree() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
         let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
 
-        let diff = repo
-            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)
-            .ok()?;
-        let stats = diff.stats().ok()?;
+        let diff = match repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let stats = match diff.stats() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
 
         commits.push(CommitEntry {
             datetime: dt,
@@ -224,11 +280,13 @@ fn compute_repo_stats(path: &Path) -> Option<RepoStats> {
         commit_count += 1;
     }
 
-    Some(RepoStats {
-        commits,
+    Some(RepoResult {
+        repo_name: repo_name(path),
         commit_count,
         file_extensions,
         authors,
+        commits,
+        warnings,
     })
 }
 
@@ -268,7 +326,7 @@ pub fn export_csv(data: &DashboardData) -> String {
     out
 }
 
-fn extension_to_language(ext: &str) -> &str {
+pub fn extension_to_language(ext: &str) -> &str {
     match ext {
         "rs" => "Rust",
         "py" | "pyw" => "Python",
@@ -326,5 +384,59 @@ fn extension_to_language(ext: &str) -> &str {
         "ql" => "GraphQL",
         "prisma" => "Prisma",
         _ => "Other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extension_to_language() {
+        assert_eq!(extension_to_language("rs"), "Rust");
+        assert_eq!(extension_to_language("py"), "Python");
+        assert_eq!(extension_to_language("js"), "JavaScript");
+        assert_eq!(extension_to_language("ts"), "TypeScript");
+        assert_eq!(extension_to_language("go"), "Go");
+        assert_eq!(extension_to_language("java"), "Java");
+        assert_eq!(extension_to_language("cpp"), "C++");
+        assert_eq!(extension_to_language("rb"), "Ruby");
+        assert_eq!(extension_to_language("md"), "Markdown");
+        assert_eq!(extension_to_language("toml"), "TOML");
+        assert_eq!(extension_to_language("unknown_ext"), "Other");
+    }
+
+    #[test]
+    fn test_language_aliases() {
+        assert_eq!(extension_to_language("pyw"), "Python");
+        assert_eq!(extension_to_language("mjs"), "JavaScript");
+        assert_eq!(extension_to_language("cc"), "C++");
+        assert_eq!(extension_to_language("hpp"), "C++ Header");
+        assert_eq!(extension_to_language("yml"), "YAML");
+        assert_eq!(extension_to_language("mdx"), "Markdown");
+    }
+
+    #[test]
+    fn test_export_csv_has_header() {
+        let data = DashboardData {
+            summary: Summary {
+                repo_count: 0,
+                total_commits: 0,
+                lines_added: 0,
+                lines_deleted: 0,
+                active_days: 0,
+                since_days: 0,
+                total_authors: 0,
+                warning_count: 0,
+            },
+            daily_commits: vec![],
+            heatmap: HeatmapData { grid: [[0; 24]; 7], max_count: 0 },
+            languages: vec![],
+            top_repos: vec![],
+            authors: vec![],
+            warnings: vec![],
+        };
+        let csv = export_csv(&data);
+        assert!(csv.starts_with("type,label,value\n"));
     }
 }

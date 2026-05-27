@@ -157,6 +157,17 @@ fn print_summary(data: &stats::DashboardData) {
             println!("║  {:>2}. {:>16}  {:>5} commits   ║", i + 1, name, count);
         }
     }
+    if s.warning_count > 0 {
+        println!("╠══════════════════════════════════════╣");
+        println!("║ Warnings ({}):                       ║", s.warning_count);
+        for w in &data.warnings {
+            let line = format!("  {}", w);
+            for chunk in line.as_bytes().chunks(40) {
+                let s = std::str::from_utf8(chunk).unwrap_or("");
+                println!("║  {:<38}║", s);
+            }
+        }
+    }
     println!("╚══════════════════════════════════════╝");
 }
 

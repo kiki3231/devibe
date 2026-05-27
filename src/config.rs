@@ -70,3 +70,47 @@ fn dirs_config() -> Option<PathBuf> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let cfg = Config::default();
+        assert_eq!(cfg.theme, None);
+        assert_eq!(cfg.days, 14);
+        assert!(cfg.exclude.is_empty());
+    }
+
+    #[test]
+    fn test_parse_minimal_toml() {
+        let toml_str = r#"
+theme = "gruvbox"
+days = 30
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.theme, Some("gruvbox".into()));
+        assert_eq!(cfg.days, 30);
+    }
+
+    #[test]
+    fn test_parse_full_toml() {
+        let toml_str = r#"
+theme = "nord"
+days = 60
+exclude = ["node_modules", ".terraform"]
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.theme, Some("nord".into()));
+        assert_eq!(cfg.days, 60);
+        assert_eq!(cfg.exclude, vec!["node_modules", ".terraform"]);
+    }
+
+    #[test]
+    fn test_parse_empty_toml() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.theme, None);
+        assert_eq!(cfg.days, 14);
+    }
+}
