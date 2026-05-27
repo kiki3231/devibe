@@ -59,11 +59,12 @@ git clone https://github.com/kiki3231/devibe.git
 cd devibe
 cargo build --release
 
-# Install to PATH (optional)
+# Option 1: Install to PATH
 sudo cp target/release/devibe /usr/local/bin/
 
-# Or run directly
-cargo run --release
+# Option 2: Shell alias (no sudo, works immediately)
+echo "alias devibe='$(pwd)/target/release/devibe'" >> ~/.bashrc
+source ~/.bashrc
 ```
 
 **Requirements:** Rust 1.80+ and libgit2. Or enable vendored libgit2:

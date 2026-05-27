@@ -59,11 +59,12 @@ git clone https://github.com/kiki3231/devibe.git
 cd devibe
 cargo build --release
 
-# 安装到 PATH（可选）
+# 方式一：安装到 PATH
 sudo cp target/release/devibe /usr/local/bin/
 
-# 或直接运行
-cargo run --release
+# 方式二：Shell 别名（无需 sudo，立即生效）
+echo "alias devibe='$(pwd)/target/release/devibe'" >> ~/.bashrc
+source ~/.bashrc
 ```
 
 **依赖：** Rust 1.80+ 和 libgit2。或启用内置 libgit2：
