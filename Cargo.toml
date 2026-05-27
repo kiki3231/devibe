@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 git2 = { version = "0.19", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
