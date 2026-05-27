@@ -8,8 +8,6 @@
 <p align="center">
   <a href="https://github.com/kiki3231/devibe/actions/workflows/CI.yml"><img src="https://github.com/kiki3231/devibe/actions/workflows/CI.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://github.com/kiki3231/devibe/releases"><img src="https://img.shields.io/github/v/release/kiki3231/devibe?color=green" alt="Release"></a>
-  <img src="https://img.shields.io/badge/二进制大小-2MB-lightgrey" alt="大小: 2MB">
   <img src="https://img.shields.io/badge/平台-Linux%20%7C%20macOS%20%7C%20Windows-blue" alt="平台">
 </p>
 
@@ -35,7 +33,6 @@
 | 终端原生 | | | ✓ |
 | 永久免费 | 有限制 | ✓ | ✓ |
 | 7 套配色主题 | | | ✓ |
-| 二进制大小 | N/A | N/A | **2MB** |
 | JSON/CSV 导出 | ✓ | ✓ | ✓ |
 
 ## 功能特性
@@ -51,20 +48,31 @@
 - **配置文件** — `.devibe.toml` 配置主题、时间窗口、排除目录
 - **纯键盘操作** — `1-5` 切换面板，`r` 刷新，`t` 切换主题，`jk` 滚动
 - **交互式目录选择器** — 无仓库时自动弹出文件浏览器，支持 vim 式导航
+- **并行扫描** — 多仓库分析使用 rayon 实现高速并发处理
 - **20ms 极速启动** — 所有数据留存本地，零网络请求
 
 ## 快速开始
 
 ```bash
-# 一行命令安装（Linux/macOS）
-curl -fsSL https://raw.githubusercontent.com/kiki3231/devibe/master/scripts/install.sh | bash
+# 克隆并编译
+git clone https://github.com/kiki3231/devibe.git
+cd devibe
+cargo build --release
 
-# 或使用 cargo
-cargo install devibe
+# 安装到 PATH（可选）
+sudo cp target/release/devibe /usr/local/bin/
 
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/kiki3231/devibe/master/scripts/install.ps1 -OutFile install.ps1; .\install.ps1
+# 或直接运行
+cargo run --release
 ```
+
+**依赖：** Rust 1.80+ 和 libgit2。或启用内置 libgit2：
+
+```bash
+cargo build --release --features vendored
+```
+
+### 使用方式
 
 ```bash
 # 扫描当前目录（深度 3）
@@ -119,25 +127,6 @@ days = 30
 
 ## 安装方式
 
-### 预编译二进制
-
-从 [GitHub Releases](https://github.com/kiki3231/devibe/releases) 下载：
-
-| 平台 | 包名 |
-|------|------|
-| Linux x86_64 | `devibe-linux-x86_64.tar.gz` |
-| Linux x86_64 (musl) | `devibe-linux-x86_64-musl.tar.gz` |
-| macOS x86_64 | `devibe-macos-x86_64.tar.gz` |
-| macOS ARM64 | `devibe-macos-arm64.tar.gz` |
-| Windows x86_64 | `devibe-windows-x86_64.zip` |
-
-### Scoop（Windows）
-
-```powershell
-scoop bucket add devibe https://github.com/kiki3231/devibe
-scoop install devibe
-```
-
 ### 从源码编译
 
 ```bash
@@ -147,22 +136,7 @@ cargo build --release
 sudo cp target/release/devibe /usr/local/bin/
 ```
 
-**依赖：** Rust 1.80+ 和 libgit2。或启用内置 libgit2：
-
-```bash
-cargo install devibe --features vendored
-```
-
-## Windows SmartScreen 说明
-
-Windows SmartScreen 可能会拦截从网上下载的未签名 `.exe` 文件。这是因为开源项目通常没有代码签名证书（费用 $200+/年）。
-
-**解决方案（任选其一）：**
-
-1. **使用 Scoop** — `scoop install devibe` 完全避免警告
-2. **手动解除阻止** — 右键 `devibe.exe` > 属性 > 常规 > 勾选 **解除阻止** > 确定
-3. **从源码编译** — `cargo install devibe` 使用自己的工具链编译
-4. **下载 `.zip` 包** — Windows 对压缩包的拦截较为宽松
+**依赖：** Rust 1.80+ 和 libgit2。
 
 ## 配置文件
 
@@ -201,7 +175,7 @@ exclude = ["node_modules", ".terraform"]
 
 欢迎贡献！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-devibe 是一个 Rust 项目，主要使用 ratatui、crossterm、git2 和 chrono。查看 [Issues](https://github.com/kiki3231/devibe/issues) 中标记为 `good first issue` 的任务。
+devibe 是一个 Rust 项目，主要使用 ratatui、crossterm、git2、chrono 和 rayon。查看 [Issues](https://github.com/kiki3231/devibe/issues) 中标记为 `good first issue` 的任务。
 
 ## 为什么叫 devibe？
 

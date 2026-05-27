@@ -8,8 +8,6 @@
 <p align="center">
   <a href="https://github.com/kiki3231/devibe/actions/workflows/CI.yml"><img src="https://github.com/kiki3231/devibe/actions/workflows/CI.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://github.com/kiki3231/devibe/releases"><img src="https://img.shields.io/github/v/release/kiki3231/devibe?color=green" alt="Release"></a>
-  <img src="https://img.shields.io/badge/binary-2MB-lightgrey" alt="Binary: 2MB">
   <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-blue" alt="Platforms">
 </p>
 
@@ -35,7 +33,6 @@
 | Terminal-native | | | ✓ |
 | Free forever | Limited | ✓ | ✓ |
 | 7 color themes | | | ✓ |
-| Binary size | N/A | N/A | **2MB** |
 | JSON/CSV export | ✓ | ✓ | ✓ |
 
 ## Features
@@ -51,20 +48,31 @@
 - **Config file** — `.devibe.toml` for theme, date range, and exclusions
 - **Keyboard-driven** — `1-5` switch panels, `r` refresh, `t` cycle themes, `jk` scroll
 - **Interactive directory picker** — browse filesystem to find git repos (vim-key navigation)
+- **Parallel scanning** — multi-repo analysis uses rayon for fast concurrent processing
 - **Sub-20ms startup** — all data stays local, no network calls
 
 ## Quick Start
 
 ```bash
-# One-liner install (Linux/macOS)
-curl -fsSL https://raw.githubusercontent.com/kiki3231/devibe/master/scripts/install.sh | bash
+# Clone and build
+git clone https://github.com/kiki3231/devibe.git
+cd devibe
+cargo build --release
 
-# Or with cargo
-cargo install devibe
+# Install to PATH (optional)
+sudo cp target/release/devibe /usr/local/bin/
 
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/kiki3231/devibe/master/scripts/install.ps1 -OutFile install.ps1; .\install.ps1
+# Or run directly
+cargo run --release
 ```
+
+**Requirements:** Rust 1.80+ and libgit2. Or enable vendored libgit2:
+
+```bash
+cargo build --release --features vendored
+```
+
+### Usage
 
 ```bash
 # Scan current directory (depth 3)
@@ -119,25 +127,6 @@ days = 30
 
 ## Installation
 
-### Pre-built binaries
-
-Download from [GitHub Releases](https://github.com/kiki3231/devibe/releases):
-
-| Platform | Package |
-|----------|---------|
-| Linux x86_64 | `devibe-linux-x86_64.tar.gz` |
-| Linux x86_64 (musl) | `devibe-linux-x86_64-musl.tar.gz` |
-| macOS x86_64 | `devibe-macos-x86_64.tar.gz` |
-| macOS ARM64 | `devibe-macos-arm64.tar.gz` |
-| Windows x86_64 | `devibe-windows-x86_64.zip` |
-
-### Scoop (Windows)
-
-```powershell
-scoop bucket add devibe https://github.com/kiki3231/devibe
-scoop install devibe
-```
-
 ### From source
 
 ```bash
@@ -147,22 +136,7 @@ cargo build --release
 sudo cp target/release/devibe /usr/local/bin/
 ```
 
-**Requirements:** Rust 1.80+ and libgit2. Or enable vendored libgit2:
-
-```bash
-cargo install devibe --features vendored
-```
-
-## Windows SmartScreen Notice
-
-Windows SmartScreen may flag unsigned `.exe` files downloaded from the internet. This is normal for open-source projects without a code signing certificate (costs $200+/year).
-
-**Workarounds (choose one):**
-
-1. **Scoop** — `scoop install devibe` avoids the warning entirely
-2. **Unblock manually** — Right-click `devibe.exe` > Properties > General > Check **Unblock** > OK
-3. **Build from source** — `cargo install devibe` uses your own toolchain
-4. **Use the `.zip` release** — Windows is less aggressive with archived downloads
+**Requirements:** Rust 1.80+ and libgit2.
 
 ## Configuration
 
@@ -201,7 +175,7 @@ exclude = ["node_modules", ".terraform"]
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) (中文).
 
-Devibe is a Rust project using ratatui, crossterm, git2, and chrono. Check the [issues](https://github.com/kiki3231/devibe/issues) for tasks tagged `good first issue`.
+Devibe is a Rust project using ratatui, crossterm, git2, chrono, and rayon. Check the [issues](https://github.com/kiki3231/devibe/issues) for tasks tagged `good first issue`.
 
 ## Why "devibe"?
 
